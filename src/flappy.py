@@ -4,6 +4,7 @@ import sys
 import pygame
 from pygame.locals import K_ESCAPE, K_SPACE, K_UP, KEYDOWN, QUIT
 
+
 from .entities import (
     Background,
     Floor,
@@ -14,7 +15,15 @@ from .entities import (
     Score,
     WelcomeMessage,
 )
-from .utils import GameConfig, Images, Sounds, Window
+from .utils import GameConfig, Images, Sounds, Window, Neural_Network
+
+class Bird:
+    def __init__(self) -> None:
+        self.brain = Neural_Network.Network([4, 3, 1])
+
+    def toFlapOrNotToFlap(self, y=0, y_vel=0, pipeHeight=400, pipeDist=250):
+        flapPercent = self.brain.forward_propagate([y, y_vel, pipeHeight, pipeDist])[0]
+        return flapPercent
 
 
 class Flappy:
@@ -36,6 +45,7 @@ class Flappy:
 
     async def start(self):
         while True:
+            self.bird = Bird()
             self.background = Background(self.config)
             self.floor = Floor(self.config)
             self.player = Player(self.config)
@@ -43,29 +53,9 @@ class Flappy:
             self.game_over_message = GameOver(self.config)
             self.pipes = Pipes(self.config)
             self.score = Score(self.config)
-            await self.splash()
+
             await self.play()
-            await self.game_over()
-
-    async def splash(self):
-        """Shows welcome splash screen animation of flappy bird"""
-
-        self.player.set_mode(PlayerMode.SHM)
-
-        while True:
-            for event in pygame.event.get():
-                self.check_quit_event(event)
-                if self.is_tap_event(event):
-                    return
-
-            self.background.tick()
-            self.floor.tick()
-            self.player.tick()
-            self.welcome_message.tick()
-
-            pygame.display.update()
-            await asyncio.sleep(0)
-            self.config.tick()
+ 
 
     def check_quit_event(self, event):
         if event.type == QUIT or (
@@ -96,8 +86,23 @@ class Flappy:
 
             for event in pygame.event.get():
                 self.check_quit_event(event)
-                if self.is_tap_event(event):
-                    self.player.flap()
+                
+            vertVelocity = self.player.vel_y
+            playerHeight = self.player.y
+
+            firstPipe = self.pipes.lower[0]
+            pipeGap = self.pipes.pipe_gap
+            if len(self.pipes.upper) == 1 or self.player.x < firstPipe.x:
+                pipeHeight = firstPipe.y + pipeGap / 2
+                pipeDist = firstPipe.x - self.player.x
+            else:
+                secondPipe = self.pipes.lower[1]
+                pipeHeight = secondPipe.y + pipeGap / 2
+                pipeDist = secondPipe.x - self.player.x
+
+
+            if self.bird.toFlapOrNotToFlap(playerHeight, vertVelocity, pipeHeight, pipeDist) > 0.5:
+                self.player.flap()
 
             self.background.tick()
             self.floor.tick()
@@ -109,27 +114,4 @@ class Flappy:
             await asyncio.sleep(0)
             self.config.tick()
 
-    async def game_over(self):
-        """crashes the player down and shows gameover image"""
 
-        self.player.set_mode(PlayerMode.CRASH)
-        self.pipes.stop()
-        self.floor.stop()
-
-        while True:
-            for event in pygame.event.get():
-                self.check_quit_event(event)
-                if self.is_tap_event(event):
-                    if self.player.y + self.player.h >= self.floor.y - 1:
-                        return
-
-            self.background.tick()
-            self.floor.tick()
-            self.pipes.tick()
-            self.score.tick()
-            self.player.tick()
-            self.game_over_message.tick()
-
-            self.config.tick()
-            pygame.display.update()
-            await asyncio.sleep(0)
