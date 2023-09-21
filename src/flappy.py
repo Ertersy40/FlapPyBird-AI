@@ -4,22 +4,20 @@ import sys
 import pygame
 from pygame.locals import K_ESCAPE, K_SPACE, K_UP, KEYDOWN, QUIT
 
-
 from .entities import (
     Background,
     Floor,
-    GameOver,
     Pipes,
     Player,
     PlayerMode,
-    Score,
-    WelcomeMessage,
+    Score
 )
+
 from .utils import GameConfig, Images, Sounds, Window, Neural_Network
 
 class Bird:
     def __init__(self) -> None:
-        self.brain = Neural_Network.Network([4, 3, 1])
+        self.brain = Neural_Network.Network([4, 1])
 
     def toFlapOrNotToFlap(self, y=0, y_vel=0, pipeHeight=400, pipeDist=250):
         flapPercent = self.brain.forward_propagate([y, y_vel, pipeHeight, pipeDist])[0]
@@ -44,13 +42,12 @@ class Flappy:
         )
 
     async def start(self):
+        FlappyBoisPerGen = 200
         while True:
-            self.bird = Bird()
+            self.birds = [Bird() for _ in range(FlappyBoisPerGen)]
             self.background = Background(self.config)
             self.floor = Floor(self.config)
-            self.player = Player(self.config)
-            self.welcome_message = WelcomeMessage(self.config)
-            self.game_over_message = GameOver(self.config)
+            self.players = [Player(self.config) for _ in range(FlappyBoisPerGen)]
             self.pipes = Pipes(self.config)
             self.score = Score(self.config)
 
@@ -74,44 +71,56 @@ class Flappy:
 
     async def play(self):
         self.score.reset()
-        self.player.set_mode(PlayerMode.NORMAL)
+        for player in self.players:
+            player.set_mode(PlayerMode.NORMAL)
 
         while True:
-            if self.player.collided(self.pipes, self.floor):
+            for index, player in enumerate(self.players):
+                if player.collided(self.pipes, self.floor):
+                    #Remove player and bird from list
+                    self.birds.pop(index)
+                    self.players.pop(index)
+
+            #If there are no more players left, start again
+            if not self.players:
                 return
 
             for i, pipe in enumerate(self.pipes.upper):
-                if self.player.crossed(pipe):
+                if self.players[0].crossed(pipe):
                     self.score.add()
 
             for event in pygame.event.get():
                 self.check_quit_event(event)
                 
-            vertVelocity = self.player.vel_y
-            playerHeight = self.player.y
 
             firstPipe = self.pipes.lower[0]
             pipeGap = self.pipes.pipe_gap
-            if len(self.pipes.upper) == 1 or self.player.x < firstPipe.x:
+            if len(self.pipes.upper) == 1 or self.players[0].x < firstPipe.x:
                 pipeHeight = firstPipe.y + pipeGap / 2
-                pipeDist = firstPipe.x - self.player.x
+                pipeDist = firstPipe.x
             else:
                 secondPipe = self.pipes.lower[1]
                 pipeHeight = secondPipe.y + pipeGap / 2
-                pipeDist = secondPipe.x - self.player.x
+                pipeDist = secondPipe.x
+            
+                
+            playerInfo = []
+            for player in self.players:
+                playerInfo.append((player.vel_y, player.y))
 
-
-            if self.bird.toFlapOrNotToFlap(playerHeight, vertVelocity, pipeHeight, pipeDist) > 0.5:
-                self.player.flap()
+            
+            for birdNum, info in enumerate(playerInfo):
+                vel, height = info
+                if self.birds[birdNum].toFlapOrNotToFlap(height, vel, pipeHeight, pipeDist) > 0.5:
+                    self.players[birdNum].flap()
 
             self.background.tick()
             self.floor.tick()
             self.pipes.tick()
             self.score.tick()
-            self.player.tick()
+            for player in self.players:
+                player.tick()
 
             pygame.display.update()
             await asyncio.sleep(0)
             self.config.tick()
-
-
