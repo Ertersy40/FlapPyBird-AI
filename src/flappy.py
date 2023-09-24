@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from random import uniform, randint
 
 import pygame
 from pygame.locals import K_ESCAPE, K_SPACE, K_UP, KEYDOWN, QUIT
@@ -15,9 +16,40 @@ from .entities import (
 
 from .utils import GameConfig, Images, Sounds, Window, Neural_Network
 
+def clone(oneLuckyBird, cloneCount):
+    numRands = 20
+    mutation_rate = 1.5
+    brain = oneLuckyBird.brain
+    clones = [Bird() for _ in range(numRands)]
+    clones.append(oneLuckyBird)
+    for _ in range(cloneCount - (1 + numRands)):
+        freshBrain = Neural_Network.Network([4, 6, 1])
+
+        for i, layer in enumerate(brain.nodes):
+            for j, geniusNode in enumerate(layer):
+                freshBrain.nodes[i][j].bias = geniusNode.bias + get_random_offset(mutation_rate)
+        
+        for i, layer in enumerate(brain.connections):
+            for j, geniusConnection in enumerate(layer):
+                freshBrain.connections[i][j].weight = geniusConnection.weight + get_random_offset(mutation_rate)
+        
+        clones.append(Bird(freshBrain))
+
+    return clones
+
+def get_random_offset(mutation_rate):
+    if randint(1, 3) == 3:
+        return 0
+    else:
+        return round(uniform(-1 * mutation_rate, mutation_rate), 5)
+
+
 class Bird:
-    def __init__(self) -> None:
-        self.brain = Neural_Network.Network([4, 1])
+    def __init__(self, brain=None) -> None:
+        if brain:
+            self.brain = brain
+        else:
+            self.brain = Neural_Network.Network([4, 6, 1])
 
     def toFlapOrNotToFlap(self, y=0, y_vel=0, pipeHeight=400, pipeDist=250):
         flapPercent = self.brain.forward_propagate([y, y_vel, pipeHeight, pipeDist])[0]
@@ -43,15 +75,17 @@ class Flappy:
 
     async def start(self):
         FlappyBoisPerGen = 200
+        
+        self.birds = [Bird() for _ in range(FlappyBoisPerGen)]
         while True:
-            self.birds = [Bird() for _ in range(FlappyBoisPerGen)]
             self.background = Background(self.config)
             self.floor = Floor(self.config)
             self.players = [Player(self.config) for _ in range(FlappyBoisPerGen)]
             self.pipes = Pipes(self.config)
             self.score = Score(self.config)
 
-            await self.play()
+            winningBird = await self.play()
+            self.birds = clone(winningBird, FlappyBoisPerGen)
  
 
     def check_quit_event(self, event):
@@ -77,6 +111,9 @@ class Flappy:
         while True:
             for index, player in enumerate(self.players):
                 if player.collided(self.pipes, self.floor):
+                    #Keep track of the winning bird
+                    if len(self.birds) == 1:
+                        return self.birds[0]
                     #Remove player and bird from list
                     self.birds.pop(index)
                     self.players.pop(index)
